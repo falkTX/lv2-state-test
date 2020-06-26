@@ -119,7 +119,7 @@ static LV2_State_Status save(LV2_Handle instance,
                              uint32_t flags,
                              const LV2_Feature* const* features)
 {
-    instancePtr->saved = false;
+    instancePtr->saved = true;
     return LV2_STATE_SUCCESS;
 }
 
