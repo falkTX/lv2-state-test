@@ -10,6 +10,7 @@
 #include <lv2/state/state.h>
 
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 
 #ifndef HAVE_LV2_STATE_FREE_PATH
@@ -36,16 +37,41 @@ static LV2_Handle instantiate(const LV2_Descriptor* const descriptor,
                               const char* const bundle_path,
                               const LV2_Feature* const* const features)
 {
-    StateTest* instance = calloc(1, sizeof(StateTest));
+    const LV2_State_Free_Path* freePath = NULL;
+    const LV2_State_Make_Path* makePath = NULL;
+    const LV2_State_Map_Path* mapPath = NULL;
 
     for (int i=0; features[i] != NULL; ++i)
     {
-        if (strcmp(features[i]->URI, LV2_STATE__freePath) == 0)
-            instance->freePath = features[i]->data;
-        if (strcmp(features[i]->URI, LV2_STATE__makePath) == 0)
-            instance->makePath = features[i]->data;
-        if (strcmp(features[i]->URI, LV2_STATE__mapPath) == 0)
-            instance->mapPath = features[i]->data;
+        /**/ if (strcmp(features[i]->URI, LV2_STATE__freePath) == 0)
+            freePath = features[i]->data;
+        else if (strcmp(features[i]->URI, LV2_STATE__makePath) == 0)
+            makePath = features[i]->data;
+        else if (strcmp(features[i]->URI, LV2_STATE__mapPath) == 0)
+            mapPath = features[i]->data;
+    }
+
+    if (freePath == NULL || makePath == NULL || mapPath == NULL)
+        return NULL;
+
+    StateTest* instance = calloc(1, sizeof(StateTest));
+
+    instance->freePath = freePath;
+    instance->makePath = makePath;
+    instance->mapPath = mapPath;
+
+    {
+        char* const projectPath = makePath->path(makePath->handle, ".");
+
+        if (projectPath != NULL)
+        {
+            printf("state-test init ok, initial path is: '%s'\n", projectPath);
+            freePath->free_path(freePath->handle, projectPath);
+        }
+        else
+        {
+            printf("state-test init ok, but failed to get initial path\n");
+        }
     }
 
     return instance;
@@ -121,6 +147,12 @@ static LV2_State_Status save(LV2_Handle instance,
 {
     instancePtr->saved = true;
     return LV2_STATE_SUCCESS;
+
+    // TODO
+    (void)store;
+    (void)handle;
+    (void)flags;
+    (void)features;
 }
 
 static LV2_State_Status restore(LV2_Handle instance,
@@ -131,6 +163,12 @@ static LV2_State_Status restore(LV2_Handle instance,
 {
     instancePtr->restored = true;
     return LV2_STATE_SUCCESS;
+
+    // TODO
+    (void)retrieve;
+    (void)handle;
+    (void)flags;
+    (void)features;
 }
 
 static const void* extension_data(const char* const uri)
@@ -151,6 +189,7 @@ const LV2_Descriptor* lv2_descriptor(const uint32_t index)
 {
     static const LV2_Descriptor desc = {
         .URI = "https://git.kx.studio/falkTX/lv2-state-test",
+        .instantiate = instantiate,
         .connect_port = connect_port,
         .activate = activate,
         .run = run,
