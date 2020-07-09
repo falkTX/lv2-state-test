@@ -13,6 +13,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 
 #ifdef DO_NOT_HAVE_LV2_STATE_FREE_PATH
 // forwards compatibility with old lv2 headers
@@ -33,6 +34,14 @@ typedef struct {
     const LV2_State_Make_Path* makePath;
     const LV2_State_Map_Path* mapPath;
 } StateTest;
+
+static void lv2_free_path(const LV2_State_Free_Path* freePath, char* path)
+{
+    if (freePath != NULL)
+        freePath->free_path(freePath->handle, path);
+    else
+        free(path);
+}
 
 static LV2_Handle instantiate(const LV2_Descriptor* const descriptor,
                               const double sample_rate,
@@ -67,27 +76,60 @@ static LV2_Handle instantiate(const LV2_Descriptor* const descriptor,
 
     lv2_log_logger_init(&instance->logger, uridMap, log);
 
-    if (makePath != NULL)
+    if (makePath == NULL)
     {
-        char* const projectPath = makePath->path(makePath->handle, ".");
+        lv2_log_note(&instance->logger, "state-test init, host does not have makePath\n");
+        return instance;
+    }
 
-        if (projectPath != NULL)
-        {
-            lv2_log_note(&instance->logger, "state-test init, host has makePath and initial path is: '%s'\n", projectPath);
+    char* projectPath;
 
-            if (freePath != NULL)
-                freePath->free_path(freePath->handle, projectPath);
-            else
-                free(projectPath);
-        }
-        else
-        {
-            lv2_log_note(&instance->logger, "state-test init, host has makePath but failed to get initial path\n");
-        }
+    // test getting initial dir
+    projectPath = makePath->path(makePath->handle, ".");
+
+    if (projectPath != NULL)
+    {
+        const int status = access(projectPath, F_OK);
+        lv2_log_note(&instance->logger, "state-test init, host has makePath and initial dir is: '%s' (access = %i)\n",
+                     projectPath, status);
+
+        lv2_free_path(freePath, projectPath);
     }
     else
     {
-        lv2_log_note(&instance->logger, "state-test init, host does not have makePath\n");
+        lv2_log_note(&instance->logger, "state-test init, host has makePath but failed to get initial path\n");
+    }
+
+    // test creating single subdirs
+    projectPath = makePath->path(makePath->handle, "single-subdir/");
+
+    if (projectPath != NULL)
+    {
+        const int status = access(projectPath, F_OK);
+        lv2_log_note(&instance->logger, "state-test init, single-subdir creation resulted in '%s' (access = %i)\n",
+                     projectPath, status);
+
+        lv2_free_path(freePath, projectPath);
+    }
+    else
+    {
+        lv2_log_note(&instance->logger, "state-test init, single-subdir creation failed\n");
+    }
+
+    // test creating multiple subdirs
+    projectPath = makePath->path(makePath->handle, "subdir1/subdir2/subdir3/");
+
+    if (projectPath != NULL)
+    {
+        const int status = access(projectPath, F_OK);
+        lv2_log_note(&instance->logger, "state-test init, multi-subdir creation resulted in '%s' (access = %i)\n",
+                     projectPath, status);
+
+        lv2_free_path(freePath, projectPath);
+    }
+    else
+    {
+        lv2_log_note(&instance->logger, "state-test init, multi-subdir creation failed\n");
     }
 
     return instance;
@@ -175,10 +217,7 @@ static LV2_State_Status save(LV2_Handle instance,
     {
         lv2_log_note(&instancePtr->logger, "state-test save ok, path is: '%s'\n", projectPath);
 
-        if (freePath != NULL)
-            freePath->free_path(freePath->handle, projectPath);
-        else
-            free(projectPath);
+        lv2_free_path(freePath, projectPath);
     }
     else
     {
