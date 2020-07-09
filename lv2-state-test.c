@@ -7,13 +7,14 @@
 
 #include <lv2.h>
 #include <lv2/atom/atom.h>
+#include <lv2/log/logger.h>
 #include <lv2/state/state.h>
 
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 
-#ifndef HAVE_LV2_STATE_FREE_PATH
+#ifdef DO_NOT_HAVE_LV2_STATE_FREE_PATH
 // forwards compatibility with old lv2 headers
 #define LV2_STATE__freePath LV2_STATE_PREFIX "freePath"
 typedef void* LV2_State_Free_Path_Handle;
@@ -25,6 +26,7 @@ typedef struct {
 
 typedef struct {
     bool activated, deactivated, saved, restored;
+    LV2_Log_Logger logger;
     const LV2_Atom_Sequence* seqIn;
     LV2_Atom_Sequence* seqOut;
     const LV2_State_Free_Path* freePath;
@@ -40,6 +42,8 @@ static LV2_Handle instantiate(const LV2_Descriptor* const descriptor,
     const LV2_State_Free_Path* freePath = NULL;
     const LV2_State_Make_Path* makePath = NULL;
     const LV2_State_Map_Path* mapPath = NULL;
+    const LV2_Log_Log* log = NULL;
+    const LV2_URID_Map* uridMap = NULL;
 
     for (int i=0; features[i] != NULL; ++i)
     {
@@ -49,10 +53,11 @@ static LV2_Handle instantiate(const LV2_Descriptor* const descriptor,
             makePath = features[i]->data;
         else if (strcmp(features[i]->URI, LV2_STATE__mapPath) == 0)
             mapPath = features[i]->data;
+        else if (strcmp(features[i]->URI, LV2_LOG__log) == 0)
+            log = features[i]->data;
+        else if (strcmp(features[i]->URI, LV2_URID__map) == 0)
+            uridMap = features[i]->data;
     }
-
-    if (freePath == NULL || makePath == NULL || mapPath == NULL)
-        return NULL;
 
     StateTest* instance = calloc(1, sizeof(StateTest));
 
@@ -60,18 +65,29 @@ static LV2_Handle instantiate(const LV2_Descriptor* const descriptor,
     instance->makePath = makePath;
     instance->mapPath = mapPath;
 
+    lv2_log_logger_init(&instance->logger, uridMap, log);
+
+    if (makePath != NULL)
     {
         char* const projectPath = makePath->path(makePath->handle, ".");
 
         if (projectPath != NULL)
         {
-            printf("state-test init ok, initial path is: '%s'\n", projectPath);
-            freePath->free_path(freePath->handle, projectPath);
+            lv2_log_note(&instance->logger, "state-test init, host has makePath and initial path is: '%s'\n", projectPath);
+
+            if (freePath != NULL)
+                freePath->free_path(freePath->handle, projectPath);
+            else
+                free(projectPath);
         }
         else
         {
-            printf("state-test init ok, but failed to get initial path\n");
+            lv2_log_note(&instance->logger, "state-test init, host has makePath but failed to get initial path\n");
         }
+    }
+    else
+    {
+        lv2_log_note(&instance->logger, "state-test init, host does not have makePath\n");
     }
 
     return instance;
@@ -106,27 +122,32 @@ static void run(LV2_Handle instance, uint32_t sample_count)
 {
     if (instancePtr->deactivated)
     {
-        // TODO something
         instancePtr->deactivated = false;
+        lv2_log_note(&instancePtr->logger, "plugin was deactivated\n");
     }
 
     if (instancePtr->activated)
     {
-        // TODO something
         instancePtr->activated = false;
+        lv2_log_note(&instancePtr->logger, "plugin was activated\n");
     }
 
     if (instancePtr->restored)
     {
-        // TODO something
         instancePtr->restored = false;
+        lv2_log_note(&instancePtr->logger, "plugin state was restored\n");
     }
 
     if (instancePtr->saved)
     {
-        // TODO something
         instancePtr->saved = false;
+        lv2_log_note(&instancePtr->logger, "plugin state was saved\n");
     }
+
+    return;
+
+    // unused
+    (void)sample_count;
 }
 
 static void deactivate(LV2_Handle instance)
@@ -145,6 +166,25 @@ static LV2_State_Status save(LV2_Handle instance,
                              uint32_t flags,
                              const LV2_Feature* const* features)
 {
+    const LV2_State_Free_Path* freePath = instancePtr->freePath;
+    const LV2_State_Make_Path* makePath = instancePtr->makePath;
+
+    char* const projectPath = makePath->path(makePath->handle, ".");
+
+    if (projectPath != NULL)
+    {
+        lv2_log_note(&instancePtr->logger, "state-test save ok, path is: '%s'\n", projectPath);
+
+        if (freePath != NULL)
+            freePath->free_path(freePath->handle, projectPath);
+        else
+            free(projectPath);
+    }
+    else
+    {
+        lv2_log_note(&instancePtr->logger, "state-test save ok, but failed to get initial path\n");
+    }
+
     instancePtr->saved = true;
     return LV2_STATE_SUCCESS;
 
@@ -161,6 +201,25 @@ static LV2_State_Status restore(LV2_Handle instance,
                                 uint32_t flags,
                                 const LV2_Feature* const* features)
 {
+    const LV2_State_Free_Path* freePath = instancePtr->freePath;
+    const LV2_State_Make_Path* makePath = instancePtr->makePath;
+
+    char* const projectPath = makePath->path(makePath->handle, ".");
+
+    if (projectPath != NULL)
+    {
+        lv2_log_note(&instancePtr->logger, "state-test restore ok, path is: '%s'\n", projectPath);
+
+        if (freePath != NULL)
+            freePath->free_path(freePath->handle, projectPath);
+        else
+            free(projectPath);
+    }
+    else
+    {
+        lv2_log_note(&instancePtr->logger, "state-test restore ok, but failed to get initial path\n");
+    }
+
     instancePtr->restored = true;
     return LV2_STATE_SUCCESS;
 
