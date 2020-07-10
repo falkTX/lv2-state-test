@@ -51,8 +51,8 @@ static LV2_Handle instantiate(const LV2_Descriptor* const descriptor,
     const LV2_State_Free_Path* freePath = NULL;
     const LV2_State_Make_Path* makePath = NULL;
     const LV2_State_Map_Path* mapPath = NULL;
-    const LV2_Log_Log* log = NULL;
-    const LV2_URID_Map* uridMap = NULL;
+    LV2_Log_Log* log = NULL;
+    LV2_URID_Map* uridMap = NULL;
 
     for (int i=0; features[i] != NULL; ++i)
     {
