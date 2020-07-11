@@ -234,25 +234,25 @@ static void run(LV2_Handle instance, uint32_t sample_count)
     if (instancePtr->deactivated)
     {
         instancePtr->deactivated = false;
-        lv2_log_note(&instancePtr->logger, "plugin was deactivated\n");
+        lv2_log_trace(&instancePtr->logger, "plugin was deactivated\n");
     }
 
     if (instancePtr->activated)
     {
         instancePtr->activated = false;
-        lv2_log_note(&instancePtr->logger, "plugin was activated\n");
+        lv2_log_trace(&instancePtr->logger, "plugin was activated\n");
     }
 
     if (instancePtr->restored)
     {
         instancePtr->restored = false;
-        lv2_log_note(&instancePtr->logger, "plugin state was restored\n");
+        lv2_log_trace(&instancePtr->logger, "plugin state was restored\n");
     }
 
     if (instancePtr->saved)
     {
         instancePtr->saved = false;
-        lv2_log_note(&instancePtr->logger, "plugin state was saved\n");
+        lv2_log_trace(&instancePtr->logger, "plugin state was saved\n");
     }
 
     return;
