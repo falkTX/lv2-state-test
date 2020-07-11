@@ -5,6 +5,8 @@
     as published by Sam Hocevar. See the COPYING file for more details.
 */
 
+#define _GNU_SOURCE
+
 #include <lv2.h>
 #include <lv2/atom/atom.h>
 #include <lv2/log/logger.h>
@@ -13,7 +15,10 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
+
+#define PLUGIN_URI "https://git.kx.studio/falkTX/lv2-state-test"
 
 #ifdef DO_NOT_HAVE_LV2_STATE_FREE_PATH
 // forwards compatibility with old lv2 headers
@@ -33,6 +38,8 @@ typedef struct {
     const LV2_State_Free_Path* freePath;
     const LV2_State_Make_Path* makePath;
     const LV2_State_Map_Path* mapPath;
+    char* randomNumStr;
+    LV2_URID numberURID, atomStringURID;
 } StateTest;
 
 static void lv2_free_path(const LV2_State_Free_Path* freePath, char* path)
@@ -41,6 +48,105 @@ static void lv2_free_path(const LV2_State_Free_Path* freePath, char* path)
         freePath->free_path(freePath->handle, path);
     else
         free(path);
+}
+
+static void create_paths(const LV2_State_Make_Path* const makePath,
+                         const LV2_State_Free_Path* const freePath,
+                         LV2_Log_Logger* const logger,
+                         const char* const randomNumStr,
+                         const bool instantiate)
+{
+    char* path;
+    int status;
+    FILE* fd;
+
+    // test getting initial dir
+    path = makePath->path(makePath->handle, ".");
+
+    if (path != NULL)
+    {
+        status = access(path, F_OK);
+        lv2_log_note(logger, "state-test %s, host has makePath and initial path is: '%s' (access = %i)\n",
+                     instantiate ? "init" : "save", path, status);
+
+        lv2_free_path(freePath, path);
+    }
+    else
+    {
+        lv2_log_warning(logger, "state-test %s, host has makePath but failed to get initial path\n",
+                        instantiate ? "init" : "save");
+    }
+
+    // test creating single file
+    path = makePath->path(makePath->handle, "single-file.txt");
+
+    if (path != NULL)
+    {
+        status = access(path, F_OK);
+        lv2_log_note(logger, "state-test %s, request for single-file.txt path resulted in '%s' (access = %i)\n",
+                     instantiate ? "init" : "save",
+                     path, status);
+
+        fd = fopen(path, "w");
+
+        if (fd != NULL)
+        {
+            fputs(randomNumStr, fd);
+            fputs("\n", fd);
+            fclose(fd);
+
+            lv2_log_note(logger, "state-test %s, wrote '%s' to single-file.txt successfully\n",
+                         instantiate ? "init" : "save", randomNumStr);
+        }
+        else
+        {
+            lv2_log_error(logger, "state-test %s, failed to open single-file.txt for writing\n",
+                          instantiate ? "init" : "save");
+        }
+
+        lv2_free_path(freePath, path);
+    }
+    else
+    {
+        lv2_log_error(logger, "state-test %s, request for single-file.txt path failed\n",
+                      instantiate ? "init" : "save");
+    }
+
+    // test creating subdirs
+    path = makePath->path(makePath->handle, "subdir1/subdir2/subdir3/subdir-file.txt");
+
+    if (path != NULL)
+    {
+        status = access(path, F_OK);
+        lv2_log_note(logger, "state-test %s, request for subdir-file.txt path resulted in '%s' (access = %i)\n",
+                     instantiate ? "init" : "save",
+                     path, status);
+
+        fd = fopen(path, "w");
+
+        if (fd != NULL)
+        {
+            fputs(randomNumStr, fd);
+            fputs("\n", fd);
+            fclose(fd);
+
+            lv2_log_note(logger, "state-test %s, wrote '%s' to subdir-file.txt successfully\n",
+                         instantiate ? "init" : "save", randomNumStr);
+        }
+        else
+        {
+            lv2_log_error(logger, "state-test %s, failed to open subdir-file.txt for writing\n",
+                          instantiate ? "init" : "save");
+        }
+
+        lv2_free_path(freePath, path);
+    }
+    else
+    {
+        lv2_log_error(logger, "state-test %s, request for subdir-file.txt path failed\n",
+                      instantiate ? "init" : "save");
+    }
+
 }
 
 static LV2_Handle instantiate(const LV2_Descriptor* const descriptor,
@@ -68,6 +174,12 @@ static LV2_Handle instantiate(const LV2_Descriptor* const descriptor,
             uridMap = features[i]->data;
     }
 
+    if (uridMap == NULL)
+    {
+        fprintf(stderr, "uridMap feature missing\n");
+        return NULL;
+    }
+
     StateTest* instance = calloc(1, sizeof(StateTest));
 
     instance->freePath = freePath;
@@ -76,61 +188,18 @@ static LV2_Handle instantiate(const LV2_Descriptor* const descriptor,
 
     lv2_log_logger_init(&instance->logger, uridMap, log);
 
-    if (makePath == NULL)
-    {
+    srand(time(NULL));
+    srand((int)(uintptr_t)instance);
+
+    asprintf(&instance->randomNumStr, "%d", rand());
+
+    instance->atomStringURID = uridMap->map(uridMap->handle, LV2_ATOM__String);
+    instance->numberURID = uridMap->map(uridMap->handle, PLUGIN_URI "#number");
+
+    if (makePath != NULL)
+        create_paths(makePath, freePath, &instance->logger, instance->randomNumStr, true);
+    else
         lv2_log_note(&instance->logger, "state-test init, host does not have makePath\n");
-        return instance;
-    }
-
-    char* projectPath;
-
-    // test getting initial dir
-    projectPath = makePath->path(makePath->handle, ".");
-
-    if (projectPath != NULL)
-    {
-        const int status = access(projectPath, F_OK);
-        lv2_log_note(&instance->logger, "state-test init, host has makePath and initial dir is: '%s' (access = %i)\n",
-                     projectPath, status);
-
-        lv2_free_path(freePath, projectPath);
-    }
-    else
-    {
-        lv2_log_note(&instance->logger, "state-test init, host has makePath but failed to get initial path\n");
-    }
-
-    // test creating single subdirs
-    projectPath = makePath->path(makePath->handle, "single-subdir/");
-
-    if (projectPath != NULL)
-    {
-        const int status = access(projectPath, F_OK);
-        lv2_log_note(&instance->logger, "state-test init, single-subdir creation resulted in '%s' (access = %i)\n",
-                     projectPath, status);
-
-        lv2_free_path(freePath, projectPath);
-    }
-    else
-    {
-        lv2_log_note(&instance->logger, "state-test init, single-subdir creation failed\n");
-    }
-
-    // test creating multiple subdirs
-    projectPath = makePath->path(makePath->handle, "subdir1/subdir2/subdir3/");
-
-    if (projectPath != NULL)
-    {
-        const int status = access(projectPath, F_OK);
-        lv2_log_note(&instance->logger, "state-test init, multi-subdir creation resulted in '%s' (access = %i)\n",
-                     projectPath, status);
-
-        lv2_free_path(freePath, projectPath);
-    }
-    else
-    {
-        lv2_log_note(&instance->logger, "state-test init, multi-subdir creation failed\n");
-    }
 
     return instance;
 
@@ -208,30 +277,30 @@ static LV2_State_Status save(LV2_Handle instance,
                              uint32_t flags,
                              const LV2_Feature* const* features)
 {
-    const LV2_State_Free_Path* freePath = instancePtr->freePath;
-    const LV2_State_Make_Path* makePath = instancePtr->makePath;
+    const LV2_State_Free_Path* freePath = NULL;
+    const LV2_State_Make_Path* makePath = NULL;
 
-    char* const projectPath = makePath->path(makePath->handle, ".");
-
-    if (projectPath != NULL)
+    for (int i=0; features[i] != NULL; ++i)
     {
-        lv2_log_note(&instancePtr->logger, "state-test save ok, path is: '%s'\n", projectPath);
+        /**/ if (freePath == NULL && strcmp(features[i]->URI, LV2_STATE__freePath) == 0)
+            freePath = features[i]->data;
+        else if (makePath == NULL && strcmp(features[i]->URI, LV2_STATE__makePath) == 0)
+            makePath = features[i]->data;
+    }
 
-        lv2_free_path(freePath, projectPath);
-    }
-    else
-    {
-        lv2_log_note(&instancePtr->logger, "state-test save ok, but failed to get initial path\n");
-    }
+    create_paths(makePath, freePath, &instancePtr->logger, instancePtr->randomNumStr, false);
+    store(handle,
+          instancePtr->numberURID,
+          instancePtr->randomNumStr,
+          strlen(instancePtr->randomNumStr)+1,
+          instancePtr->atomStringURID,
+          LV2_STATE_IS_POD|LV2_STATE_IS_PORTABLE);
 
     instancePtr->saved = true;
     return LV2_STATE_SUCCESS;
 
     // TODO
-    (void)store;
-    (void)handle;
     (void)flags;
-    (void)features;
 }
 
 static LV2_State_Status restore(LV2_Handle instance,
@@ -240,24 +309,37 @@ static LV2_State_Status restore(LV2_Handle instance,
                                 uint32_t flags,
                                 const LV2_Feature* const* features)
 {
-    const LV2_State_Free_Path* freePath = instancePtr->freePath;
-    const LV2_State_Make_Path* makePath = instancePtr->makePath;
+    const LV2_State_Free_Path* freePath = NULL;
+    const LV2_State_Make_Path* makePath = NULL;
 
-    char* const projectPath = makePath->path(makePath->handle, ".");
-
-    if (projectPath != NULL)
+    for (int i=0; features[i] != NULL; ++i)
     {
-        lv2_log_note(&instancePtr->logger, "state-test restore ok, path is: '%s'\n", projectPath);
+        /**/ if (freePath == NULL && strcmp(features[i]->URI, LV2_STATE__freePath) == 0)
+            freePath = features[i]->data;
+        else if (makePath == NULL && strcmp(features[i]->URI, LV2_STATE__makePath) == 0)
+            makePath = features[i]->data;
+    }
+
+    if (makePath == NULL)
+        return LV2_STATE_ERR_NO_FEATURE;
+
+    char* const path = makePath->path(makePath->handle, ".");
+
+    if (path != NULL)
+    {
+        lv2_log_note(&instancePtr->logger, "state-test restore ok, path is: '%s'\n", path);
 
         if (freePath != NULL)
-            freePath->free_path(freePath->handle, projectPath);
+            freePath->free_path(freePath->handle, path);
         else
-            free(projectPath);
+            free(path);
     }
     else
     {
         lv2_log_note(&instancePtr->logger, "state-test restore ok, but failed to get initial path\n");
     }
+
+    // TODO restore previously saved randomNumStr
 
     instancePtr->restored = true;
     return LV2_STATE_SUCCESS;
@@ -266,7 +348,6 @@ static LV2_State_Status restore(LV2_Handle instance,
     (void)retrieve;
     (void)handle;
     (void)flags;
-    (void)features;
 }
 
 static const void* extension_data(const char* const uri)
@@ -286,7 +367,7 @@ LV2_SYMBOL_EXPORT
 const LV2_Descriptor* lv2_descriptor(const uint32_t index)
 {
     static const LV2_Descriptor desc = {
-        .URI = "https://git.kx.studio/falkTX/lv2-state-test",
+        .URI = PLUGIN_URI,
         .instantiate = instantiate,
         .connect_port = connect_port,
         .activate = activate,
